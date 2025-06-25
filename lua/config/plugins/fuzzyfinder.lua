@@ -5,25 +5,19 @@ return {
 	dependencies = { 'nvim-lua/plenary.nvim' },
 	config = function()
 		-- Keymaps
-		local builtin = require('telescope.builtin')
-		-- Function to determine if we're inside a Git repo
-		local function is_git_repo()
-			local handle = io.popen("git rev-parse --is-inside-work-tree 2>/dev/null")
-			local result = handle:read("*a")
-			handle:close()
-			return result == "true\n"
-		end
-		vim.keymap.set('n', '<leader>pf', builtin.find_files, {})
-		-- Fallback for git_files
 		vim.keymap.set('n', '<C-p>', function()
-			if is_git_repo() then
-				builtin.git_files()
+			local buf_dir = vim.fn.expand('%:p:h')
+			local ok = os.execute('git -C ' ..
+				vim.fn.shellescape(buf_dir) .. ' rev-parse --is-inside-work-tree >/dev/null 2>&1') == 0
+			if ok then
+				local root = vim.fn.systemlist('git -C ' .. vim.fn.shellescape(buf_dir) .. ' rev-parse --show-toplevel')[1]
+				require('telescope.builtin').git_files({ cwd = root })
 			else
-				builtin.find_files()
+				require('telescope.builtin').find_files({ cwd = buf_dir })
 			end
-		end, {})
+		end)
 		vim.keymap.set('n', '<leader>ps', function()
-			builtin.grep_string({ search = vim.fn.input("Grep > ") })
+			require('telescope.builtin').grep_string({ search = vim.fn.input("Grep > ") })
 		end)
 
 		local telescope = require('telescope')
