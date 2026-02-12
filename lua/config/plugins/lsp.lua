@@ -2,51 +2,58 @@ return {
   {
     "neovim/nvim-lspconfig",
     dependencies = {
-      'saghen/blink.cmp',
-      {
-        "folke/lazydev.nvim",
-        ft = "lua", -- only load on lua files
-        opts = {
-          library = {
-            -- See the configuration section for more details
-            -- Load luvit types when the `vim.uv` word is found
-            { path = "luvit-meta/library", words = { "vim%.uv" } },
-          },
-        },
-      },
+      "saghen/blink.cmp",
     },
     config = function()
-      -- Incude LSPs
-      local lsp_servers = { "lua_ls", "gopls", }
-      for _, lsp in ipairs(lsp_servers) do
-        vim.lsp.enable(lsp)
-        vim.lsp.config(lsp, {
-          capabilities = require('blink.cmp').get_lsp_capabilities()
-        })
-      end
+      local capabilities = require("blink.cmp").get_lsp_capabilities()
 
-      vim.lsp.config("gopls", {
-        capabilities = require("blink.cmp").get_lsp_capabilities(),
-        root_dir = function(fname)
-          -- Only attach gopls when we're inside a real Go module
-          return vim.fs.root(fname, { "go.mod", ".git" })
-        end,
+      ------------------------------------------------------------------------
+      -- Lua LSP (FULL Neovim support, fixes `undefined global 'vim'`)
+      ------------------------------------------------------------------------
+      vim.lsp.config("lua_ls", {
+        capabilities = capabilities,
         settings = {
-          gopls = {
-            staticcheck = false,
-            analyses = {
-              unusedparams = false,
+          Lua = {
+            runtime = {
+              version = "LuaJIT",
+            },
+            diagnostics = {
+              globals = { "vim" },
+            },
+            workspace = {
+              library = vim.api.nvim_get_runtime_file("", true),
+              checkThirdParty = false,
+            },
+            telemetry = {
+              enable = false,
             },
           },
         },
       })
+      vim.lsp.enable("lua_ls")
 
+      ------------------------------------------------------------------------
+      -- Go LSP
+      ------------------------------------------------------------------------
+      vim.lsp.config("gopls", {
+        capabilities = capabilities,
+      })
+      vim.lsp.enable("gopls")
+
+      ------------------------------------------------------------------------
+      -- General Settings
+      ------------------------------------------------------------------------
       vim.o.updatetime = 500
 
-      -- Keep manual hover as a fallback
-      vim.keymap.set("n", "K", vim.lsp.buf.hover, { silent = true })
+      -- Keymaps
+      vim.keymap.set("n", "<leader>br", vim.lsp.buf.rename)
+      vim.keymap.set("n", "<leader>bca", vim.lsp.buf.code_action)
+      vim.keymap.set("n", "<leader>do", vim.diagnostic.open_float)
+      vim.keymap.set("n", "<leader>ds", vim.diagnostic.setloclist)
 
-      -- Helper: check if a floating window already exists
+      ------------------------------------------------------------------------
+      -- Helper: check if floating window exists
+      ------------------------------------------------------------------------
       local function floating_win_exists()
         for _, win in ipairs(vim.api.nvim_list_wins()) do
           local cfg = vim.api.nvim_win_get_config(win)
@@ -57,69 +64,65 @@ return {
         return false
       end
 
-      -- Attach hover behavior only when LSP supports it
+      ------------------------------------------------------------------------
+      -- LSP Attach Logic
+      ------------------------------------------------------------------------
       vim.api.nvim_create_autocmd("LspAttach", {
         callback = function(args)
           local client = vim.lsp.get_client_by_id(args.data.client_id)
-          if not client or not client.supports_method("textDocument/hover") then
-            return
-          end
+          if not client then return end
 
           local buf = args.buf
 
-          -- Auto-hover on idle
-          vim.api.nvim_create_autocmd("CursorHold", {
-            buffer = buf,
-            callback = function()
-              -- Don’t stack floating windows
-              if floating_win_exists() then
-                return
-              end
-
-              vim.lsp.buf.hover()
-            end,
-          })
-
-          -- Close hover as soon as you move
-          vim.api.nvim_create_autocmd("CursorMoved", {
-            buffer = buf,
-            callback = function()
-              for _, win in ipairs(vim.api.nvim_list_wins()) do
-                local cfg = vim.api.nvim_win_get_config(win)
-                if cfg.relative ~= "" then
-                  vim.api.nvim_win_close(win, true)
-                end
-              end
-            end,
-          })
-        end,
-      })
-
-      vim.api.nvim_create_autocmd('LspAttach', {
-        callback = function(args)
-          local client = assert(vim.lsp.get_client_by_id(args.data.client_id))
-          if not client then return end
-
-          -- Auto-format ("lint") on save.
-          if client:supports_method('textDocument/formatting') then
-            vim.api.nvim_create_autocmd('BufWritePre', {
-              buffer = args.buf,
+          -- Hover on idle
+          if client.supports_method("textDocument/hover") then
+            vim.api.nvim_create_autocmd("CursorHold", {
+              buffer = buf,
               callback = function()
-                vim.lsp.buf.format({ bufnr = args.buf, id = client.id })
+                if not floating_win_exists() then
+                  vim.lsp.buf.hover()
+                end
+              end,
+            })
+
+            vim.api.nvim_create_autocmd("CursorMoved", {
+              buffer = buf,
+              callback = function()
+                for _, win in ipairs(vim.api.nvim_list_wins()) do
+                  local cfg = vim.api.nvim_win_get_config(win)
+                  if cfg.relative ~= "" then
+                    vim.api.nvim_win_close(win, true)
+                  end
+                end
               end,
             })
           end
 
-          -- Inline diagnostics
-          vim.diagnostic.enable = true
-          vim.diagnostic.config({
-            virtual_text = {
-              prefix = '●',
-              source = 'if_many'
-            },
-          })
+          -- Format on save
+          if client.supports_method("textDocument/formatting") then
+            vim.api.nvim_create_autocmd("BufWritePre", {
+              buffer = buf,
+              callback = function()
+                vim.lsp.buf.format({ bufnr = buf, id = client.id })
+              end,
+            })
+          end
         end,
       })
+
+      ------------------------------------------------------------------------
+      -- Diagnostics Appearance
+      ------------------------------------------------------------------------
+      vim.diagnostic.config({
+        virtual_text = {
+          prefix = "●",
+          source = "if_many",
+        },
+        underline = true,
+        signs = true,
+        update_in_insert = false,
+        severity_sort = true,
+      })
     end,
-  }
+  },
 }
