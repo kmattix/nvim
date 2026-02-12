@@ -15,3 +15,12 @@ vim.opt.scrolloff = 10
 
 vim.wo.number = true
 vim.wo.relativenumber = true
+
+vim.api.nvim_create_autocmd("BufEnter", {
+  callback = function()
+    local dir = vim.fn.expand("%:p:h")
+    if dir ~= "" then
+      vim.cmd("lcd " .. dir)
+    end
+  end,
+})
